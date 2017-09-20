@@ -8,6 +8,11 @@
 
 #import "AppDelegate.h"
 
+
+static NSString * const kIGNOREKEY = @"IGNOREKEY";
+static NSString * const kOPENACTIONKEY = @"OPENACTIONKEY";
+static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
+
 @interface AppDelegate ()
 
 @end
@@ -23,7 +28,11 @@
     } else {
         //iOS 8 请求用户通知权限
         if ([UIApplication instancesRespondToSelector:@selector(registerUserNotificationSettings:)]) {
-            UIUserNotificationSettings *settings = [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeAlert | UIUserNotificationTypeSound categories:nil];
+            
+            //添加通知的动作
+            UIMutableUserNotificationCategory *category = [self addLocalNotificationActions];
+            
+            UIUserNotificationSettings *settings = [UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeBadge | UIUserNotificationTypeAlert | UIUserNotificationTypeSound categories:[NSSet setWithObject:category]];
             [application registerUserNotificationSettings:settings];
             //在请求权限弹出的 Alert 选择中，用户选择 "好"时，会回调 application:didRegisterUserNotificationSettings:方法
         }
@@ -35,9 +44,17 @@
     UILocalNotification *notification = [launchOptions objectForKey:UIApplicationLaunchOptionsLocalNotificationKey];
     NSLog(@"%s  -- %@", __func__, notification);
     
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self showInfo:[NSString stringWithFormat:@"%s  -- %@", __func__, notification]];
-    });
+//    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+//        [self showInfo:[NSString stringWithFormat:@"%s  -- %@", __func__, notification]];
+//    });
+    
+    //test app teminate 后，响应本地通知的 backgroundmode 的 acton后，再次启动，如果有打印即证明，backgroundmode 的 acton的触发真的没有启动 App，但是会回调 Action 的方法；
+    NSString *clickIgnoreActionStr = [[NSUserDefaults standardUserDefaults] objectForKey:kIGNOREKEY];
+    if (clickIgnoreActionStr.length) {
+        NSLog(@"%@",clickIgnoreActionStr);
+        [[NSUserDefaults standardUserDefaults] setObject:nil forKey:kIGNOREKEY];
+    }
+    
     
     return YES;
 }
@@ -47,6 +64,8 @@
     
     //定义本地通知对象
     UILocalNotification *notification = [[UILocalNotification alloc] init];
+    //设置时区
+    notification.timeZone = [NSTimeZone defaultTimeZone];
     //设置调用时间
     notification.fireDate = [NSDate dateWithTimeIntervalSinceNow:10.0];//通知触发的时间，10s以后
     notification.repeatInterval = 0;//通知重复间隔,其是一个 option 值， 0表示不重复，即 fire 之后就 discard 该 notification,即不会被copy 进scheduledLocalNotifications数组里。
@@ -62,25 +81,78 @@
     
     //设置用户信息
     notification.userInfo = @{@"id":@1234, @"user":@"Jacob"};//绑定到通知上的其他附加信息
+    //设定该通知的actions，actions确保已经添加到 category , 每一个 category 表示一种类型的 actions，也就说可以有很多类型的 category。但是 category 需要提前注册到 setting 中。
+    notification.category = kCATEGORYKEY;
     
     //调用通知
     [[UIApplication sharedApplication] scheduleLocalNotification:notification]; //scheduleLocalNotification 方法会对 notification 对象进行 copy ，所以需要手动 release 该 notification 对象。
     
-    //    [[UIApplication sharedApplication] presentLocalNotificationNow:notification]; //立即发送本地通知，会调用 application:didReceiveLocalNotification：处理通知
+    //    [[UIApplication sharedApplication] presentLocalNotificationNow:notification]; //立即发送本地通知，无视 notification 的 fireDate 属性值，会调用 application:didReceiveLocalNotification：处理通知
     
 }
 
-//iOS 9 之后，点击本地通知，从后台唤醒 App 或 启动 App会调用如下方法
--(void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)notification withResponseInfo:(NSDictionary *)responseInfo completionHandler:(void (^)())completionHandler {
+#pragma mark - 添加通知的动作
+//添加通知的动作
+- (UIMutableUserNotificationCategory *)addLocalNotificationActions {
+    //UIMutableUserNotificationAction用来添加自定义按钮
+    UIMutableUserNotificationAction * responseAction = [[UIMutableUserNotificationAction alloc] init];
+    responseAction.identifier = kOPENACTIONKEY;
+    responseAction.title = @"打开应用";
+    responseAction.activationMode = UIUserNotificationActivationModeForeground; //点击的时候启动程序
     
-    if ([identifier isEqualToString:@"打开应用"]) {
-        [self showInfo:identifier];
+    UIMutableUserNotificationAction *deleteAction = [[UIMutableUserNotificationAction alloc] init];
+    deleteAction.identifier = kIGNOREKEY;
+    deleteAction.title = @"忽略";
+    deleteAction.activationMode = UIUserNotificationActivationModeBackground; //点击的时候不启动程序，后台处理
+    deleteAction.authenticationRequired = YES;//需要解锁权限
+    deleteAction.destructive = YES; //YES为红色，NO为蓝色
+    
+    UIMutableUserNotificationCategory *category = [[UIMutableUserNotificationCategory alloc] init];
+    category.identifier = kCATEGORYKEY;//用于将该 category 标识的同时，那一个 notification 实例需要使用这个 category 的 actions 也是传入这个值给 notification 的。
+    //UIUserNotificationActionContextDefault:默认添加可以添加两个自定义按钮
+    //UIUserNotificationActionContextMinimal:四个自定义按钮
+    [category setActions:@[responseAction, deleteAction] forContext:UIUserNotificationActionContextDefault];
+    
+    return category;
+}
+
+//iOS 8 ~ 9 ，当点击本地通知自定义的响应按钮(action btn)时，根据按钮的 activeMode 模式，回调以下方法
+//1. ActivationModeForeground 的 action , 会启动 App 同时回调方法
+//2. ActivationModeBackground 的 action 不启动 App 让 App 在 background 下回调方法
+- (void)application:(UIApplication *)application handleActionWithIdentifier:(NSString *)identifier forLocalNotification:(UILocalNotification *)notification completionHandler:(void (^)())completionHandler {
+    
+    if ([identifier isEqualToString:kOPENACTIONKEY]) {
+        //ActivationModeForeground 的 action , 启动 App 让 App 在 Foreground 下响应
+        
+        if ([self isMainThread]) {
+            
+            [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
+            
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                
+                [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
+            });
+        }
+        
+    } else {
+        
+        //ActivationModeBackground 的 action 不启动 App 让 App 在 background 下响应
+        NSLog(@"%s  -- %@  -- identifier %@ --- thread %@", __func__, notification, identifier, [NSThread currentThread]);
+        
+        //下面代码用于测试，退出 App 后接收到 本地通知时，点击后台action时是否执行了这个响应方法。实测执行了的
+        [[NSUserDefaults standardUserDefaults] setObject:@"ActivationModeBackground 的 action 不启动 App 让 App 在 background 下响应" forKey:@"IGNOREKEY"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        
     }
     
-    completionHandler();
+    
+    
+    completionHandler(); //根据Action btn 的 identifier 处理自定义事件后应该马上调用 completionHandler block,如果调用 completionHandler block 失败的话，App 会立即 terminated。
 }
 
-// APP在前台运行中收到 本地通知 时调用
+
+// APP在前台运行中收到 本地通知 时调用, 以及App 处于后台挂起（suspended）状态，但未 terminated 时，点击通知启动都是这个方法进行响应
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification {
     // 可根据notification对象的userInfo等属性进行相应判断和处理
     NSLog(@"%s --- %@", __func__, notification);
@@ -138,5 +210,20 @@
     
     [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alertController animated:YES completion:nil];
 }
+
+//判断是否主线程
+- (BOOL)isMainThread {
+    
+    static void *mainQueueKey = "mainQueueKey";
+    dispatch_queue_set_specific(dispatch_get_main_queue(), mainQueueKey, &mainQueueKey, NULL);
+    if (dispatch_get_specific(mainQueueKey)) {
+        // do something in main queu
+        return YES;
+    } else {
+        // do something in other queue
+        return NO;
+    }
+}
+
 
 @end
