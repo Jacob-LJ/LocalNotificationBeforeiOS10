@@ -15,6 +15,7 @@ static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
 
 @interface AppDelegate ()
 
+
 @end
 
 @implementation AppDelegate
@@ -85,7 +86,7 @@ static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
     notification.category = kCATEGORYKEY;
     
     //调用通知
-    [[UIApplication sharedApplication] scheduleLocalNotification:notification]; //scheduleLocalNotification 方法会对 notification 对象进行 copy ，所以需要手动 release 该 notification 对象。
+    [[UIApplication sharedApplication] scheduleLocalNotification:notification]; //scheduleLocalNotification 方法会对 notification 对象进行 copy
     
     //    [[UIApplication sharedApplication] presentLocalNotificationNow:notification]; //立即发送本地通知，无视 notification 的 fireDate 属性值，会调用 application:didReceiveLocalNotification：处理通知
     
@@ -124,16 +125,7 @@ static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
     if ([identifier isEqualToString:kOPENACTIONKEY]) {
         //ActivationModeForeground 的 action , 启动 App 让 App 在 Foreground 下响应
         
-        if ([self isMainThread]) {
-            
-            [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
-            
-        } else {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                
-                [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
-            });
-        }
+        [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
         
     } else {
         
@@ -209,20 +201,6 @@ static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
     [alertController addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:NULL]];
     
     [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alertController animated:YES completion:nil];
-}
-
-//判断是否主线程
-- (BOOL)isMainThread {
-    
-    static void *mainQueueKey = "mainQueueKey";
-    dispatch_queue_set_specific(dispatch_get_main_queue(), mainQueueKey, &mainQueueKey, NULL);
-    if (dispatch_get_specific(mainQueueKey)) {
-        // do something in main queu
-        return YES;
-    } else {
-        // do something in other queue
-        return NO;
-    }
 }
 
 
