@@ -143,6 +143,31 @@ static NSString * const kCATEGORYKEY = @"ALERTCATEGORY";
     completionHandler(); //根据Action btn 的 identifier 处理自定义事件后应该马上调用 completionHandler block,如果调用 completionHandler block 失败的话，App 会立即 terminated。
 }
 
+//iOS 9 中带有 response 的方法，如果机器是 iOS 9系统只会调用带 response 的方法，
+- (void)application:(UIApplication *)application handleActionWithIdentifier:(nullable NSString *)identifier forLocalNotification:(UILocalNotification *)notification withResponseInfo:(NSDictionary *)responseInfo completionHandler:(void(^)())completionHandler {
+    
+    if ([identifier isEqualToString:kOPENACTIONKEY]) {
+        //ActivationModeForeground 的 action , 启动 App 让 App 在 Foreground 下响应
+        
+        [self showInfo:[NSString stringWithFormat:@"thread -%@\n identifier -%@", [NSThread currentThread], identifier]];
+        
+    } else {
+        
+        //ActivationModeBackground 的 action 不启动 App 让 App 在 background 下响应
+        NSLog(@"%s  -- %@  -- identifier %@ --- thread %@", __func__, notification, identifier, [NSThread currentThread]);
+        
+        //下面代码用于测试，退出 App 后接收到 本地通知时，点击后台action时是否执行了这个响应方法。实测执行了的
+        [[NSUserDefaults standardUserDefaults] setObject:@"ActivationModeBackground 的 action 不启动 App 让 App 在 background 下响应" forKey:@"IGNOREKEY"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        
+    }
+    
+    
+    
+    completionHandler();
+    
+}
+
 
 // APP在前台运行中收到 本地通知 时调用, 以及App 处于后台挂起（suspended）状态，但未 terminated 时，点击通知启动都是这个方法进行响应
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification {
